@@ -1,0 +1,220 @@
+process_emotion_event <- function(emotion, event) {
+  setwd(paste0("/data/netapp02/work/Manvi_Sethi/", emotion, "_csvs"))
+  
+  files <- list.files()
+  pids <- unique(gsub(".*_(F[0-9]+).*", "\\1", files))
+  
+  results <- list()
+  
+  for (i in pids) {
+    m_file <- grep(paste0(emotion, "_", i, "_m_", event, ".csv"), files, value = TRUE)
+    c_file <- grep(paste0(emotion, "_", i, "_c_", event, ".csv"), files, value = TRUE)
+    
+    if (length(m_file) == 0 || length(c_file) == 0) {
+      results[[paste0(i, "_", emotion, "_", event)]] <- list("file not found")
+    } else {
+      m_data <- read.csv(m_file)
+      c_data <- read.csv(c_file)
+      
+      ccf_res <- ccf(c_data[[emotion]], m_data[[emotion]], plot = FALSE)
+      
+      results[[paste0(i, "_", emotion, "_", event)]] <- ccf_res
+    }
+  }
+  
+  return(results)
+}
+
+# Process data for each emotion and event
+emotions <- c("anger", "happiness", "sadness")
+events <- c("epi", "psi")
+
+results <- list()
+
+for (e in emotions) {
+  for (ev in events) {
+    emotion_event_results <- process_emotion_event(e, ev)
+    results <- c(results, emotion_event_results)
+  }
+}
+
+# Initialize results_summary list
+results_summary <- list()
+
+# Loop through the results list
+for (name in names(results)) {
+  # Check if the entry has "file not found" value
+  if (identical(results[[name]], list("file not found"))) {
+    max_corr <- NA
+    max_lag <- NA
+  } else {
+    # Find the index of maximum absolute correlation
+    max_index <- which.max(abs(results[[name]]$acf))
+    
+    # Get the maximum correlation and corresponding lag
+    max_corr <- results[[name]]$acf[max_index]
+    max_lag <- results[[name]]$lag[max_index]
+  }
+  
+  # Add the summary to the results_summary list
+  results_summary[[name]] <- list(max_correlation = max_corr, lag = max_lag)
+}
+
+# Convert results_summary list to a data frame
+results_summary_df <- do.call(rbind, lapply(results_summary, data.frame))
+
+# Add row names as a new column called 'name'
+results_summary_df$name <- rownames(results_summary_df)
+
+# Reset row names
+rownames(results_summary_df) <- NULL
+
+# Rearrange columns
+results_summary_df <- results_summary_df[, c("name", "max_correlation", "lag")]
+
+# Separate the 'name' column based on the "_" delimiter
+results_summary_df <- results_summary_df %>%
+  separate(name, c("pid", "emotion", "event"), sep = "_", remove = TRUE)
+
+#CCF CODE PT 2 
+process_emotion_event <- function(emotion, event) {
+  setwd(paste0("/data/netapp02/work/Manvi_Sethi/", emotion, "_csvs"))
+  
+  files <- list.files()
+  pids <- unique(gsub(".*_(F[0-9]+).*", "\\1", files))
+  
+  results <- list()
+  
+  for (i in pids) {
+    m_file <- grep(paste0(emotion, "_", i, "_m_", event, ".csv"), files, value = TRUE)
+    c_file <- grep(paste0(emotion, "_", i, "_c_", event, ".csv"), files, value = TRUE)
+    
+    if (length(m_file) == 0 || length(c_file) == 0) {
+      results[[paste0(i, "_", emotion, "_", event)]] <- list("file not found")
+    } else {
+      m_data <- read.csv(m_file)
+      c_data <- read.csv(c_file)
+      
+      ccf_res <- ccf(c_data[[emotion]], m_data[[emotion]], plot = FALSE)
+      
+      results[[paste0(i, "_", emotion, "_", event)]] <- ccf_res
+    }
+  }
+  
+  return(results)
+}
+
+# Process data for each emotion and event
+emotions <- c("anger", "happiness", "sadness")
+events <- c("epi", "psi")
+
+results <- list()
+
+for (e in emotions) {
+  for (ev in events) {
+    emotion_event_results <- process_emotion_event(e, ev)
+    results <- c(results, emotion_event_results)
+  }
+}
+
+# Initialize results_summary list
+results_summary <- list()
+
+# Loop through the results list
+for (name in names(results)) {
+  # Check if the entry has "file not found" value
+  if (identical(results[[name]], list("file not found"))) {
+    max_corr <- NA
+    max_lag <- NA
+  } else {
+    # Extract the cross-correlation results
+    ccf_res <- results[[name]]
+    
+    # Combine the autocorrelation and lag arrays into a dataframe
+    lagcor <- data.frame(lag = ccf_res$lag, corr = ccf_res$acf)
+  }
+  
+  # Add the lagcor dataframe to the results_summary list
+  results_summary[[name]] <- lagcor
+}
+
+
+
+#CCF code pt 3 
+# Initialize the results_summary_clean list
+results_summary_clean <- list()
+
+# Loop through the results_summary list
+for (name in names(results_summary)) {
+  # Extract the dataframe from the results_summary list
+  df <- results_summary[[name]]
+  
+  # Filter the dataframe to keep only the rows where lag falls within the range from -38 to 38
+  df_filtered <- df[df$lag >= -38 & df$lag <= 38, ]
+  
+  # Take the absolute value of the corr column
+  df_filtered$corr <- abs(df_filtered$corr)
+  
+  # Apply Fisher's Z transformation to the corr column
+  df_filtered$corr <- 0.5 * log((1 + df_filtered$corr) / (1 - df_filtered$corr))
+  
+  # Add the cleaned dataframe to the results_summary_clean list
+  results_summary_clean[[name]] <- df_filtered
+}
+
+# Initialize the grand_mean_df dataframe
+grand_mean_df <- data.frame(name = character(), avg_corr = numeric(), stringsAsFactors = FALSE)
+
+# Loop through the results_summary_clean list
+for (name in names(results_summary_clean)) {
+  # Extract the cleaned dataframe from the results_summary_clean list
+  df_clean <- results_summary_clean[[name]]
+  
+  # Calculate the grand mean of the corr column
+  grand_mean <- mean(df_clean$corr, na.rm = TRUE)
+  
+  # Add a row to the grand_mean_df dataframe with the name and grand mean
+  grand_mean_df <- rbind(grand_mean_df, data.frame(name = name, avg_corr = grand_mean, stringsAsFactors = FALSE))
+}
+
+# Print the grand_mean_df dataframe
+print(grand_mean_df)
+
+# Initialize the avg_grand_mean_df dataframe
+avg_grand_mean_df <- data.frame(emotion = character(), event = character(), avg_corr = numeric(), stringsAsFactors = FALSE)
+
+# Loop through the rows in the grand_mean_df dataframe
+for (i in seq_len(nrow(grand_mean_df))) {
+  # Extract the name and avg_corr values from the current row
+  name <- grand_mean_df$name[i]
+  avg_corr <- grand_mean_df$avg_corr[i]
+  
+  # Separate the emotion and event from the name
+  parts <- unlist(strsplit(name, "_"))
+  pid <- parts[1]
+  emotion <- parts[2]
+  event <- parts[3]
+  
+  # Add a row to the avg_grand_mean_df dataframe with the deconcatenated emotion and event and average correlation
+  avg_grand_mean_df <- rbind(avg_grand_mean_df, data.frame(pid = pid, emotion = emotion, event = event, avg_corr = avg_corr, stringsAsFactors = FALSE))
+}
+
+# Print the avg_grand_mean_df dataframe
+print(avg_grand_mean_df)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
